@@ -14,6 +14,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 
+
+SEED = 2020
+np.random.seed(SEED)
+
+
 def dataMaker(dist_from_center, r_range, num, d):
     r = np.random.random((num, )) * r_range + dist_from_center
     phi = np.random.random((num, )) * 2 * np.pi # angle from z-axis
@@ -63,10 +68,27 @@ if __name__ == "__main__":
     
     # visualize
     fig = plt.figure()
-    ax = fig.gca(projection='3d')
+    ax = fig.gca(projection = '3d')
     ax.scatter(T[:, 0], T[:, 1], T[:, 2])
     
     # build camera graph
     W = graphBuilder(T, num, edge_connection_prob, dist_thre)
+    
+    # create V
+    edge_num = int(W.sum())
+    V = np.zeros((edge_num, d))
+    row = 0
+    for i in range(num):
+        for j in range(num):
+            if W[i, j] == 1.0:
+                ti = T[i, :]
+                tj = T[j, :]
+                V[row, :] = (ti - tj) / np.linalg.norm(ti - tj)
+                row += 1
+    
+    # save synthetic data
+    np.save('./data/W.npy', W)
+    np.save('./data/T.npy', T)
+    np.save('./data/V.npy', V)
     
     
