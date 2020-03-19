@@ -10,6 +10,8 @@ Created on Wed Mar 18 20:49:38 2020
 
 ### Project --- Camera location estimation
 import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 
 SEED = 2020
 np.random.seed(SEED)
@@ -83,7 +85,7 @@ def qp_solver(L, parameters, num):
     C_inv = np.linalg.inv(C)
     return C_inv[0:(3 * num), -1]   
 
-def admm_solver(parameters, num, edge_num, max_iter, l1_prox, delta, tau, kicked, epsilon, ratio):
+def admm_solver(parameters, y0, lam0, num, edge_num, max_iter, l1_prox, delta, tau, kicked, epsilon, ratio):
     # implement scaled ADMM or kicked ADMM, where rho = 2
     A = parameters['A']
     R = parameters['R']
@@ -100,9 +102,9 @@ def admm_solver(parameters, num, edge_num, max_iter, l1_prox, delta, tau, kicked
 
     D = np.dot(C_inv[0:(3 * num), 0:(3 * num)], R.T)
     
-    y = np.zeros((3 * edge_num, ))
-    lam = np.zeros((3 * edge_num, ))
-    l2_loss = 100
+    y = y0
+    lam = lam0
+    l2_loss = 1000000 # dummy here
     for i in range(max_iter):
         # update T
         w = y - lam
@@ -149,8 +151,7 @@ def irls_solver(parameters, num, edge_num, max_iter, delta):
         squared_norm = compute_all_l2(Pc, y) ** 2
         W = np.kron(np.diag(1 / np.sqrt(squared_norm + delta)), np.ones((3, 3)))
         
-#        print('Loss: ', evaluate_obj(parameters, t))
-        
+#        print('Loss: ', evaluate_obj(parameters, t))    
     return t
 
 if __name__ == "__main__":
@@ -158,11 +159,12 @@ if __name__ == "__main__":
     
     W = np.load('./data/W.npy') # graph adjacency matrix
     V = np.load('./data/V.npy') # collection of direction unit vectors
+
+    
+    num = W.shape[0]
+    edge_num = V.shape[0]    
     
 
-    num = W.shape[0]
-    edge_num = V.shape[0]
-    
     # add Gaussian noise to V
     V += np.random.randn(edge_num, 3) * np.sqrt(noise_variance)
     
@@ -171,9 +173,10 @@ if __name__ == "__main__":
     
     
     # QP
-    t = qp_solver(parameters['L'], parameters, num)
-    loss = evaluate_obj(parameters, t)
+    t_qp = qp_solver(parameters['L'], parameters, num)
+    loss = evaluate_obj(parameters, t_qp)
     print('L2 loss of QP: ', loss)
+    T_qp = t_qp.reshape((num, 3))
     
     # ADMM
     kicked = False
@@ -183,24 +186,43 @@ if __name__ == "__main__":
     tau = 0.1 # the smaller, the greater penalty on l1
     ratio = 10
     epsilon = 1e-8
-    t = admm_solver(parameters, num, edge_num, max_iter, l1_prox, delta, tau, kicked, epsilon, ratio)
-    loss = evaluate_obj(parameters, t)
+    y0 = np.zeros((3 * edge_num, ))
+    lam0 = np.zeros((3 * edge_num, ))    
+    t_admm = admm_solver(parameters, y0, lam0, num, edge_num, max_iter, l1_prox, delta, tau, kicked, epsilon, ratio)
+    loss = evaluate_obj(parameters, t_admm)
     print('L2 loss of ADMM: ', loss)
+    T_admm = t_admm.reshape((num, 3))
 
     # IRLS
     max_iter = 100
     delta = 0.00001
-    t = irls_solver(parameters, num, edge_num, max_iter, delta)
-    loss = evaluate_obj(parameters, t)
+    t_irls = irls_solver(parameters, num, edge_num, max_iter, delta)
+    loss = evaluate_obj(parameters, t_irls)
     print('L2 loss of IRLS: ', loss)
+    T_irls = t_irls.reshape((num, 3))
 
+    T_gt = np.load('./data/T.npy') # ground truth
+    t0 = np.mean(T_gt, axis = 0)
+    scale = np.dot(parameters['b'], (T_gt - t0).reshape((3 * num, )))
     
-    # compare with GT data
-    # we should compute a scale and a translation
+    # shift and scale to original frame
+    T_qp = T_qp * scale + t0
+    T_admm = T_admm * scale + t0
+    T_irls = T_irls * scale + t0
     
-#    T = np.load('./data/T.npy') # ground truth
-#    t = T.reshape((3 * num, ))
-#    loss = evaluate_obj(parameters, t)
-#    print('L2 loss of ground truth: ', loss)
-    
+    # mean absolute error in the original coordinate frame
+    MAE_qp = np.mean(np.abs(T_gt - T_qp))
+    MAE_admm = np.mean(np.abs(T_gt - T_admm))
+    MAE_irls = np.mean(np.abs(T_gt - T_irls))
+    print('MAE of QP: ', MAE_qp)
+    print('MAE of ADMM: ', MAE_admm)
+    print('MAE of IRLS: ', MAE_irls)
+
+    # visualize and compare
+    fig = plt.figure()
+    ax = fig.gca(projection = '3d')
+    ax.scatter(T_gt[:, 0], T_gt[:, 1], T_gt[:, 2])
+#    ax.scatter(T_qp[:, 0], T_qp[:, 1], T_qp[:, 2])    
+    ax.scatter(T_admm[:, 0], T_admm[:, 1], T_admm[:, 2])
+#    ax.scatter(T_irls[:, 0], T_irls[:, 1], T_irls[:, 2])
     
