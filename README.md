@@ -2,5 +2,5 @@
 Camera location estimation
 
 To Do:  
-Acceleration of IRLS
+Acceleration of IRLS  
 Various experiments, e.g. loss curve, input noise  
