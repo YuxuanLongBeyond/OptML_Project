@@ -10,22 +10,12 @@ Created on Wed Mar 18 20:49:38 2020
 
 ### Project --- Camera location estimation
 import numpy as np
+
 SEED = 2020
 np.random.seed(SEED)
 
-if __name__ == "__main__":
-    noise_variance = 0.001 # adjust it for experiment
-    
-    W = np.load('./data/W.npy') # graph adjacency matrix
-    V = np.load('./data/V.npy') # collection of direction unit vectors
-    
 
-    num = W.shape[0]
-    edge_num = V.shape[0]
-    
-    # add Gaussian noise to V
-    V += np.random.randn(edge_num, 3) * np.sqrt(noise_variance)
-    
+def define_parameters(W, V, num, edge_num):
     # linear operator for extracting ti - tj, s.t. row of Rs T is (ti - tj)
     Rs = np.zeros((edge_num, num))
     index = np.arange(num)
@@ -59,9 +49,30 @@ if __name__ == "__main__":
     # linear operator s.t. b^T t = 1
     b = np.dot(R.T, v)
     
-    
-    
-    
+    parameters = {}
+    parameters['A'] = A
+    parameters['Rs'] = Rs
+    parameters['R'] = R
+    parameters['L'] = L
+    parameters['b'] = b
+    parameters['P'] = P
+    parameters['Pc'] = Pc
+    return parameters
+
+def compute_all_l2(Pc, y):
+    Pc_y = np.dot(Pc, y)
+    l2_norm_all = np.sqrt(Pc_y[0::3] ** 2 + Pc_y[1::3] ** 2 + Pc_y[2::3] ** 2)
+    return l2_norm_all
+
+def evaluate_obj(parameters, t):
+    Pc = parameters['Pc']
+    R = parameters['R']
+    y = np.dot(R, t)
+    return np.sum(compute_all_l2(Pc, y))
+
+def qp_solver(L, parameters, num):
+    A = parameters['A']
+    b = parameters['b']
     
     # implement QP with squared l2 loss
     C = np.zeros((4 + 3 * num, 4 + 3 * num))
@@ -70,30 +81,28 @@ if __name__ == "__main__":
     C += C.T
     C[0: 3*num, 0:3*num] = L
     C_inv = np.linalg.inv(C)
-    t = C_inv[0:(3 * num), -1]
-    
+    return C_inv[0:(3 * num), -1]   
+
+def admm_solver(parameters, num, edge_num, max_iter, l1_prox, delta, tau, kicked, epsilon, ratio):
     # implement scaled ADMM or kicked ADMM, where rho = 2
-    kicked = True
-    max_iter = 1000
-    tau = 0.0000001 # the smaller, the greater penalty on l1
-    ratio = 10
-    tol = 1e-8
+    A = parameters['A']
+    R = parameters['R']
+    b = parameters['b']
+    P = parameters['P']
+    Pc = parameters['Pc']
     
-#    C = np.zeros((4 + 3 * num, 4 + 3 * num))
-#    C[0:(3 * num), (3 * num):(3 * num + 3)] = A.T
-#    C[0:(3 * num), (3 * num + 3):] = b.reshape((3 * num, 1))
-#    C += C.T
+    C = np.zeros((4 + 3 * num, 4 + 3 * num))
+    C[0:(3 * num), (3 * num):(3 * num + 3)] = A.T
+    C[0:(3 * num), (3 * num + 3):] = b.reshape((3 * num, 1))
+    C += C.T
     C[0: 3*num, 0:3*num] = np.dot(R.T, R)
     C_inv = np.linalg.inv(C)
 
     D = np.dot(C_inv[0:(3 * num), 0:(3 * num)], R.T)
     
-    
     y = np.zeros((3 * edge_num, ))
-#    y = np.dot(R, t)
     lam = np.zeros((3 * edge_num, ))
-    l1_loss = 100
-#    t = np.zeros((3 * edge_num, ))
+    l2_loss = 100
     for i in range(max_iter):
         # update T
         w = y - lam
@@ -103,28 +112,95 @@ if __name__ == "__main__":
         z = np.dot(R, t) + lam
         P_z = np.dot(P, z)
         Pc_z = np.dot(Pc, z)
-        y = P_z + np.sign(Pc_z) * np.maximum(Pc_z - 1 / tau, 0)
+        if l1_prox:
+            y = P_z + np.sign(Pc_z) * np.maximum(Pc_z - 1 / tau, 0)
+        else:
+            # l2 proximal
+            all_l2_norm = compute_all_l2(Pc, z)
+            tem = np.kron(all_l2_norm, np.ones((3, ))) + delta
+            y = P_z + np.maximum(1 - 1 / (tau * tem), 0) * Pc_z
         
         # update lambda
         lam += np.dot(R, t) - y
         
         # primal
-        l1_loss_next = np.sum(np.abs(np.dot(Pc, y)))
-        if kicked and abs(l1_loss_next - l1_loss) < tol:
+        l2_loss_next = np.sum(compute_all_l2(Pc, y))
+        if kicked and abs(l2_loss_next - l2_loss) < epsilon:
             tau *= ratio
             lam /= ratio
-        l1_loss = l1_loss_next
-        print(l1_loss)
-        
+        l2_loss = l2_loss_next
+#        print('L2 loss: ', l2_loss)
+    return t
 
-    # implement IRLS
+def irls_solver(parameters, num, edge_num, max_iter, delta):
+    Pc = parameters['Pc']
+    R = parameters['R']
+    W = 1
+    for i in range(max_iter):
+        # update L
+        P_new = W * Pc
+        L = np.dot(R.T, np.dot(P_new, R))
+        
+        # solve t
+        t = qp_solver(L, parameters, num)
+        
+        # update weight
+        y = np.dot(R, t)
+        squared_norm = compute_all_l2(Pc, y) ** 2
+        W = np.kron(np.diag(1 / np.sqrt(squared_norm + delta)), np.ones((3, 3)))
+        
+#        print('Loss: ', evaluate_obj(parameters, t))
+        
+    return t
+
+if __name__ == "__main__":
+    noise_variance = 0.01 # adjust it for experiment
+    
+    W = np.load('./data/W.npy') # graph adjacency matrix
+    V = np.load('./data/V.npy') # collection of direction unit vectors
     
 
+    num = W.shape[0]
+    edge_num = V.shape[0]
+    
+    # add Gaussian noise to V
+    V += np.random.randn(edge_num, 3) * np.sqrt(noise_variance)
+    
+    # define parameters such as operators and projectors
+    parameters = define_parameters(W, V, num, edge_num)
+    
+    
+    # QP
+    t = qp_solver(parameters['L'], parameters, num)
+    loss = evaluate_obj(parameters, t)
+    print('L2 loss of QP: ', loss)
+    
+    # ADMM
+    kicked = False
+    l1_prox = True
+    max_iter = 100
+    delta = 0.000001
+    tau = 0.1 # the smaller, the greater penalty on l1
+    ratio = 10
+    epsilon = 1e-8
+    t = admm_solver(parameters, num, edge_num, max_iter, l1_prox, delta, tau, kicked, epsilon, ratio)
+    loss = evaluate_obj(parameters, t)
+    print('L2 loss of ADMM: ', loss)
+
+    # IRLS
+    max_iter = 100
+    delta = 0.00001
+    t = irls_solver(parameters, num, edge_num, max_iter, delta)
+    loss = evaluate_obj(parameters, t)
+    print('L2 loss of IRLS: ', loss)
+
+    
     # compare with GT data
     # we should compute a scale and a translation
     
-    T = np.load('./data/T.npy') # ground truth
-    
-    
+#    T = np.load('./data/T.npy') # ground truth
+#    t = T.reshape((3 * num, ))
+#    loss = evaluate_obj(parameters, t)
+#    print('L2 loss of ground truth: ', loss)
     
     
