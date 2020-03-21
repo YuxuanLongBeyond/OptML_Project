@@ -51,6 +51,13 @@ def define_parameters(W, V, num, edge_num):
     # linear operator s.t. b^T t = 1
     b = np.dot(R.T, v)
     
+    # C for linear coefficients of KKT equation    
+    C = np.zeros((4 + 3 * num, 4 + 3 * num))
+    C[0:(3 * num), (3 * num):(3 * num + 3)] = A.T
+    C[0:(3 * num), (3 * num + 3):] = b.reshape((3 * num, 1))
+    C += C.T
+    C[0: 3*num, 0:3*num] = L    
+    
     parameters = {}
     parameters['A'] = A
     parameters['Rs'] = Rs
@@ -59,6 +66,7 @@ def define_parameters(W, V, num, edge_num):
     parameters['b'] = b
     parameters['P'] = P
     parameters['Pc'] = Pc
+    parameters['C'] = C
     return parameters
 
 def compute_all_l2(Pc, y):
@@ -73,30 +81,20 @@ def evaluate_obj(parameters, t):
     return np.sum(compute_all_l2(Pc, y))
 
 def qp_solver(L, parameters, num):
-    A = parameters['A']
-    b = parameters['b']
+    C = parameters['C']
     
     # implement QP with squared l2 loss
-    C = np.zeros((4 + 3 * num, 4 + 3 * num))
-    C[0:(3 * num), (3 * num):(3 * num + 3)] = A.T
-    C[0:(3 * num), (3 * num + 3):] = b.reshape((3 * num, 1))
-    C += C.T
     C[0: 3*num, 0:3*num] = L
     C_inv = np.linalg.inv(C)
     return C_inv[0:(3 * num), -1]   
 
 def admm_solver(parameters, y0, lam0, num, edge_num, max_iter, l1_prox, delta, tau, kicked, epsilon, ratio):
     # implement scaled ADMM or kicked ADMM, where rho = 2
-    A = parameters['A']
     R = parameters['R']
-    b = parameters['b']
     P = parameters['P']
     Pc = parameters['Pc']
+    C = parameters['C']
     
-    C = np.zeros((4 + 3 * num, 4 + 3 * num))
-    C[0:(3 * num), (3 * num):(3 * num + 3)] = A.T
-    C[0:(3 * num), (3 * num + 3):] = b.reshape((3 * num, 1))
-    C += C.T
     C[0: 3*num, 0:3*num] = np.dot(R.T, R)
     C_inv = np.linalg.inv(C)
 
@@ -134,22 +132,25 @@ def admm_solver(parameters, y0, lam0, num, edge_num, max_iter, l1_prox, delta, t
 #        print('L2 loss: ', l2_loss)
     return t
 
-def irls_solver(parameters, num, edge_num, max_iter, delta):
+def irls_solver(parameters, num, edge_num, max_iter, delta, use_l1):
     Pc = parameters['Pc']
     R = parameters['R']
-    W = 1
+    w = 1
+    tem = np.dot(Pc, R)
     for i in range(max_iter):
         # update L
-        P_new = W * Pc
-        L = np.dot(R.T, np.dot(P_new, R))
+        L = np.dot(tem.T * w, tem)
         
         # solve t
         t = qp_solver(L, parameters, num)
         
         # update weight
-        y = np.dot(R, t)
-        squared_norm = compute_all_l2(Pc, y) ** 2
-        W = np.kron(np.diag(1 / np.sqrt(squared_norm + delta)), np.ones((3, 3)))
+        Pc_y = np.dot(tem, t)
+        if use_l1:
+            w = 1 / (np.abs(Pc_y) + delta)
+        else:
+            squared_norm = Pc_y[0::3] ** 2 + Pc_y[1::3] ** 2 + Pc_y[2::3] ** 2
+            w = np.repeat(1 / np.sqrt(squared_norm + delta), 3)
         
 #        print('Loss: ', evaluate_obj(parameters, t))    
     return t
@@ -196,7 +197,8 @@ if __name__ == "__main__":
     # IRLS
     max_iter = 100
     delta = 0.00001
-    t_irls = irls_solver(parameters, num, edge_num, max_iter, delta)
+    use_l1 = False # if False, use l2 as objective
+    t_irls = irls_solver(parameters, num, edge_num, max_iter, delta, use_l1)
     loss = evaluate_obj(parameters, t_irls)
     print('L2 loss of IRLS: ', loss)
     T_irls = t_irls.reshape((num, 3))
@@ -222,7 +224,7 @@ if __name__ == "__main__":
     fig = plt.figure()
     ax = fig.gca(projection = '3d')
     ax.scatter(T_gt[:, 0], T_gt[:, 1], T_gt[:, 2])
-#    ax.scatter(T_qp[:, 0], T_qp[:, 1], T_qp[:, 2])    
+    ax.scatter(T_qp[:, 0], T_qp[:, 1], T_qp[:, 2])    
     ax.scatter(T_admm[:, 0], T_admm[:, 1], T_admm[:, 2])
-#    ax.scatter(T_irls[:, 0], T_irls[:, 1], T_irls[:, 2])
+    ax.scatter(T_irls[:, 0], T_irls[:, 1], T_irls[:, 2])
     
