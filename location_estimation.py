@@ -102,7 +102,8 @@ def admm_solver(parameters, y0, lam0, num, edge_num, max_iter, l1_prox, delta, t
     l2_loss = 1000000 # dummy here
     for i in range(max_iter):
         # update T
-        t = np.dot(D, y - lam) + c
+        r = y - lam
+        t = np.dot(D, r) + c
         
         # update Y
         z = np.dot(Q, t) + lam
