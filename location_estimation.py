@@ -18,19 +18,19 @@ np.random.seed(SEED)
 
 
 def define_parameters(W, V, num, edge_num):
-    # linear operator for extracting ti - tj, s.t. row of Rs T is (ti - tj)
-    Rs = np.zeros((edge_num, num))
+    # linear operator for extracting ti - tj, s.t. row of Qs T is (ti - tj)
+    Qs = np.zeros((edge_num, num))
     index = np.arange(num)
     row = 0
     for i in range(num):
         r = W[i, :] == 1.0
         s = r.sum()
-        Rs[np.arange(row, row + s), i] = 1
-        Rs[np.arange(row, row + s), index[r]] = -1
+        Qs[np.arange(row, row + s), i] = 1
+        Qs[np.arange(row, row + s), index[r]] = -1
         row += s
     
-    # augmented form of Rs
-    R = np.kron(Rs, np.eye(3))  # R_{ij} t = ti - tj
+    # augmented form of Qs
+    Q = np.kron(Qs, np.eye(3))  # Q_{ij} t = ti - tj
         
     # linear operator s.t. At = 0
     A = np.zeros((3, 3 * num)) 
@@ -46,27 +46,21 @@ def define_parameters(W, V, num, edge_num):
     P = np.eye(3 * edge_num, 3 * edge_num) - Pc
     
     # L s.t. the squared l2 loss is t^T L t
-    L = np.dot(R.T, np.dot(Pc, R))
+    L = np.dot(Q.T, np.dot(Pc, Q))
     
     # linear operator s.t. b^T t = 1
-    b = np.dot(R.T, v)
+    b = np.dot(Q.T, v)
     
-    # C for linear coefficients of KKT equation    
-    C = np.zeros((4 + 3 * num, 4 + 3 * num))
-    C[0:(3 * num), (3 * num):(3 * num + 3)] = A.T
-    C[0:(3 * num), (3 * num + 3):] = b.reshape((3 * num, 1))
-    C += C.T
-    C[0: 3*num, 0:3*num] = L    
+    A_tilde = np.concatenate((A, b.reshape((1, -1))), axis = 0)
     
     parameters = {}
     parameters['A'] = A
-    parameters['Rs'] = Rs
-    parameters['R'] = R
+    parameters['Q'] = Q
     parameters['L'] = L
     parameters['b'] = b
     parameters['P'] = P
     parameters['Pc'] = Pc
-    parameters['C'] = C
+    parameters['A_tilde'] = A_tilde
     return parameters
 
 def compute_all_l2(Pc, y):
@@ -76,40 +70,42 @@ def compute_all_l2(Pc, y):
 
 def evaluate_obj(parameters, t):
     Pc = parameters['Pc']
-    R = parameters['R']
-    y = np.dot(R, t)
+    Q = parameters['Q']
+    y = np.dot(Q, t)
     return np.sum(compute_all_l2(Pc, y))
 
 def qp_solver(L, parameters, num):
-    C = parameters['C']
+#    # implement QP with squared l2 loss
+    A_tilde = parameters['A_tilde']
+    tem = np.linalg.solve(L, A_tilde.T)
+    return tem.dot(np.linalg.solve(A_tilde.dot(tem), [0,0,0,1]))
     
-    # implement QP with squared l2 loss
-    C[0: 3*num, 0:3*num] = L
-    C_inv = np.linalg.inv(C)
-    return C_inv[0:(3 * num), -1]   
 
 def admm_solver(parameters, y0, lam0, num, edge_num, max_iter, l1_prox, delta, tau, kicked, epsilon, ratio):
     # implement scaled ADMM or kicked ADMM, where rho = 2
-    R = parameters['R']
+    Q = parameters['Q']
     P = parameters['P']
     Pc = parameters['Pc']
-    C = parameters['C']
-    
-    C[0: 3*num, 0:3*num] = np.dot(R.T, R)
-    C_inv = np.linalg.inv(C)
 
-    D = np.dot(C_inv[0:(3 * num), 0:(3 * num)], R.T)
+    A_tilde = parameters['A_tilde']
+    
+    Q_pinv = np.linalg.pinv(Q)
+    B = np.linalg.solve(np.dot(Q.T, Q), A_tilde.T)
+    tem = B.dot(np.linalg.inv(A_tilde.dot(B)))
+    D = Q_pinv - tem.dot(A_tilde.dot(Q_pinv))
+    
+    c = tem[:, -1]
+    
     
     y = y0
     lam = lam0
     l2_loss = 1000000 # dummy here
     for i in range(max_iter):
         # update T
-        w = y - lam
-        t = np.dot(D, w) + C_inv[0:(3 * num), -1]
+        t = np.dot(D, y - lam) + c
         
         # update Y
-        z = np.dot(R, t) + lam
+        z = np.dot(Q, t) + lam
         P_z = np.dot(P, z)
         Pc_z = np.dot(Pc, z)
         if l1_prox:
@@ -121,7 +117,7 @@ def admm_solver(parameters, y0, lam0, num, edge_num, max_iter, l1_prox, delta, t
             y = P_z + np.maximum(1 - 1 / (tau * tem), 0) * Pc_z
         
         # update lambda
-        lam += np.dot(R, t) - y
+        lam += np.dot(Q, t) - y
         
         # primal
         l2_loss_next = np.sum(compute_all_l2(Pc, y))
@@ -134,9 +130,9 @@ def admm_solver(parameters, y0, lam0, num, edge_num, max_iter, l1_prox, delta, t
 
 def irls_solver(parameters, num, edge_num, max_iter, delta, use_l1):
     Pc = parameters['Pc']
-    R = parameters['R']
+    Q = parameters['Q']
     w = 1
-    tem = np.dot(Pc, R)
+    tem = np.dot(Pc, Q)
     for i in range(max_iter):
         # update L
         L = np.dot(tem.T * w, tem)
