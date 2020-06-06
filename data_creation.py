@@ -55,12 +55,12 @@ def graphBuilder(T, num, edge_connection_prob, dist_thre):
     
 
 if __name__ == "__main__":
-    num = 50
+    num = 100
     d = 3 # constant
     dist_from_center = 1
     r_range = 1
     
-    edge_connection_prob = 0.8 # only if two cameras have distance smaller than dist_thre
+    edge_connection_prob = 0.5 # only if two cameras have distance smaller than dist_thre
     dist_thre = 1.5
     
     # make up camera locations
