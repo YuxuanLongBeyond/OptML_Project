@@ -8,7 +8,7 @@ Created on Wed Mar 18 15:29:22 2020
 
 ## Optimization for ML 
 
-### Project --- Camera location estimation
+### Data synthesis for camera locations
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -20,6 +20,9 @@ np.random.seed(SEED)
 
 
 def dataMaker(dist_from_center, r_range, num, d):
+    """
+    Synthesize camera locations, which are randomly distributed in the sphere
+    """
     r = np.random.random((num, )) * r_range + dist_from_center
     phi = np.random.random((num, )) * 2 * np.pi # angle from z-axis
     theta = np.random.random(num) * np.pi # angle from x-axis
@@ -32,6 +35,10 @@ def dataMaker(dist_from_center, r_range, num, d):
     return T
 
 def graphBuilder(T, num, edge_connection_prob, dist_thre):
+    """
+    Create a camera graph with random connections between the nearby cameras
+    """
+    
     # create adjacency matrix
     W = np.random.random((num, num))
     W = (W < edge_connection_prob).astype(np.float32)
@@ -55,18 +62,18 @@ def graphBuilder(T, num, edge_connection_prob, dist_thre):
     
 
 if __name__ == "__main__":
-    num = 100
-    d = 3 # constant
-    dist_from_center = 1
-    r_range = 1
+    num = 100 # number of cameras
+    d = 3 # dimension of location, default to 3
+    dist_from_center = 1 # minimum distance between the camera locations and the world center
+    r_range = 1 # radius range of locations from the minimum distance
     
-    edge_connection_prob = 0.5 # only if two cameras have distance smaller than dist_thre
-    dist_thre = 1.5
+    edge_connection_prob = 0.5  # connection probility between cameras
+    dist_thre = 1.5 # two cameras can connect only if they have distance smaller than dist_thre
     
     # make up camera locations
     T = dataMaker(dist_from_center, r_range, num, d)
     
-    # visualize
+    # visualize the locations
     fig = plt.figure()
     ax = fig.gca(projection = '3d')
     ax.scatter(T[:, 0], T[:, 1], T[:, 2])
@@ -74,9 +81,10 @@ if __name__ == "__main__":
     # build camera graph
     W = graphBuilder(T, num, edge_connection_prob, dist_thre)
     
-    # create V
-    edge_num = int(W.sum())
-    V = np.zeros((edge_num, d))
+    edge_num = int(W.sum()) # number of edges in the graph
+    
+    # create pairwise direction observations
+    V = np.zeros((edge_num, d)) # pairwise direction observations
     row = 0
     for i in range(num):
         for j in range(num):
