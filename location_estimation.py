@@ -232,10 +232,10 @@ def main(noise_variance, W, V, show_plot):
 if __name__ == "__main__":
     noise_variance = 0.03 # Variance of Gaussian noise to be added to pairwise directions
     show_plot = 1 # flag for showing the 3D plot of recovered locations
-    robustness_test = 0 # flag for testing the robustness of all algorithms
+    robustness_test = 1 # flag for testing the robustness of all algorithms
     
     var_list = np.linspace(0.0001, 0.0201, 101) # list of noise variances for robustness test
-    
+    var_list = var_list[:90]
     
     W = np.load('./data/W.npy') # graph adjacency matrix
     V = np.load('./data/V.npy') # collection of direction unit vectors (pairwise observations) 
@@ -252,7 +252,7 @@ if __name__ == "__main__":
         
         # test a range of noise variances
         for i, var in enumerate(var_list):
-            print(i, var)
+            print('Test noise variance ', var)
             W = np.load('./data/W.npy') # graph adjacency matrix
             V = np.load('./data/V.npy') # collection of direction unit vectors
             MAE_ls, MAE_admm, MAE_irls = main(var, W, V, show_plot)
@@ -261,6 +261,7 @@ if __name__ == "__main__":
             err_irls[i] = MAE_irls
         
         # plot the MAE versus the noise variance
+        plt.figure()
         plt.plot(var_list, err_ls, label = 'LS')
         plt.plot(var_list, err_admm, label = 'ADMM')
         plt.plot(var_list, err_irls, label = 'IRLS')
