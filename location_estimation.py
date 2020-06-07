@@ -11,7 +11,6 @@ Created on Wed Mar 18 20:49:38 2020
 ### Camera location estimation
 import numpy as np
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
 
 SEED = 2020
 np.random.seed(SEED)
