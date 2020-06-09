@@ -1,6 +1,11 @@
 # Project for OptML
 
-Only Numpy and Matplotlib are required to be installed.  
+Only Numpy, Matplotlib and pytransform3d are required to be installed.  
+
+## Rotation Averaging
+To visualize a viewing graph, please go to the directory `rotation` and play around with `demo_test.ipynb`. Some mapping methods between different rotation representations are implemented as well.
+
+To check the effectiveness of the interior point method, please go to the directory `rotation` and find `l1decoder.ipynb`. You can do different tests by changing the size of A matrix and adding different level of perturbations. Note: the level of perturbations should not be too high.
 
 ## Translation Averaging
 
