@@ -8,9 +8,17 @@ Created on Wed Mar 18 20:49:38 2020
 
 ## Optimization for ML 
 
-### Camera location estimation
+### Camera location estimation (Translation Averaging)
+
+"""
+This script implements three algorithms for translation averaging:
+    LS, ADMM, IRLS
+"""
+
+
 import numpy as np
 import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import axes3d
 
 SEED = 2020
 np.random.seed(SEED)
@@ -232,7 +240,7 @@ def main(noise_variance, W, V, show_plot):
 if __name__ == "__main__":
     noise_variance = 0.03 # Variance of Gaussian noise to be added to pairwise directions
     show_plot = 1 # flag for showing the 3D plot of recovered locations
-    robustness_test = 1 # flag for testing the robustness of all algorithms
+    robustness_test = 0 # flag for testing the robustness of all algorithms
     
     var_list = np.linspace(0.0001, 0.0201, 101) # list of noise variances for robustness test
     var_list = var_list[:90]

@@ -36,7 +36,7 @@ def dataMaker(dist_from_center, r_range, num, d):
 
 def graphBuilder(T, num, edge_connection_prob, dist_thre):
     """
-    Create a camera graph with random connections between the nearby cameras
+    Create a viewing graph with random connections between the nearby cameras
     """
     
     # create adjacency matrix
@@ -78,7 +78,7 @@ if __name__ == "__main__":
     ax = fig.gca(projection = '3d')
     ax.scatter(T[:, 0], T[:, 1], T[:, 2])
     
-    # build camera graph
+    # build a viewing graph
     W = graphBuilder(T, num, edge_connection_prob, dist_thre)
     
     edge_num = int(W.sum()) # number of edges in the graph
